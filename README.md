@@ -1,237 +1,70 @@
 # MLz - LLaMA Inference in Zig
 
-MLz is a Zig implementation for running LLaMA language models. It includes three implementations:
-
-1. **llama.cpp bindings** - Fast, production-ready (uses C++ llama.cpp)
-2. **Native Zig + GGML** - Experimental Zig inference using GGML for tensor ops
-3. **Pure Zig with SIMD** - Educational pure Zig with native `@Vector` SIMD ⭐ NEW
+MLz is a Zig implementation for running LLaMA language models, primarily utilizing fine-tuned bindings to `llama.cpp` for high-performance inference. It supports hardware acceleration via CUDA and Vulkan, and provides a modern chat interface.
 
 ## Quick Start
 
 ```bash
-# Build all executables
-zig build
+# Build the project (Release mode recommended)
+zig build -Doptimize=ReleaseFast
 
-# Option 1: Fast inference (llama.cpp bindings)
-.\zig-out\bin\MLz.exe --gguf Llama-3.2-3B-Instruct-Q4_K_M.gguf
+# Run inference
+.\zig-out\bin\MLz.exe Llama-3.2-3B-Instruct-Q4_K_M.gguf
+```
 
-# Option 2: Pure Zig with native SIMD (educational)
-.\zig-out\bin\MLz-pure.exe Llama-3.2-3B-Instruct-Q4_K_M.gguf
+## Hardware Acceleration
 
-# Option 3: Native Zig + GGML (experimental)
-.\zig-out\bin\MLz-native.exe Llama-3.2-3B-Instruct-Q4_K_M.gguf
+MLz supports GPU acceleration out of the box. You can enable it during the build step:
+
+### CUDA (NVIDIA)
+```bash
+zig build -Dcuda=true -Doptimize=ReleaseFast
+```
+*Note: On Windows, this requires the CUDA Toolkit and will automatically target the MSVC ABI for compatibility.*
+
+### Vulkan
+```bash
+zig build -Dvulkan=true -Doptimize=ReleaseFast
 ```
 
 ## Project Structure
 
 ```
 src/
-├── main.zig          # Entry point (llama.cpp bindings)
-├── llama.zig         # ✅ WORKING: LLaMA using GGML
-├── llama_cpp.zig     # C bindings to llama.cpp
-│
-├── main_pure.zig     # ⭐ Pure Zig chat interface
-├── llama_pure.zig    # ⭐ Pure Zig LLaMA inference
-├── tensor.zig        # ⭐ SIMD tensor operations (@Vector)
-│
-├── main_native.zig   # ⚠️ EXPERIMENTAL: Native + GGML
-├── llama_native.zig  # ⚠️ EXPERIMENTAL: WIP
-│
-├── ggml.zig          # GGML tensor library bindings
-├── gguf.zig          # GGUF file format parser
-└── tokenizer.zig     # BPE tokenizer implementation
+├── main.zig          # CLI Entry point & Chat Interface
+├── llama_cpp.zig     # Zig idiomatic wrapper for llama.cpp
+├── root.zig          # Library root
+└── ggml_shim.h       # C header shim for GGML/llama.cpp
 ```
 
-## Pure Zig SIMD Implementation ⭐
+## Features
 
-The `tensor.zig` module demonstrates how to use Zig's native SIMD:
-
-```zig
-const std = @import("std");
-
-// SIMD vector type - maps to CPU registers (AVX = 256-bit)
-pub const Vec = @Vector(8, f32);
-
-/// Load 8 floats from memory into SIMD register
-pub inline fn simdLoad(ptr: [*]const f32) Vec {
-    return ptr[0..8].*;
-}
-
-/// SIMD-optimized dot product
-fn dotProduct(a: [*]const f32, b: [*]const f32, len: usize) f32 {
-    var sum: Vec = @splat(0);
-    var i: usize = 0;
-    
-    // Process 8 elements at a time with SIMD
-    while (i + 8 <= len) : (i += 8) {
-        const va = simdLoad(a + i);
-        const vb = simdLoad(b + i);
-        sum += va * vb;  // Fused multiply-add
-    }
-    
-    return @reduce(.Add, sum) + scalarRemainder(a, b, i, len);
-}
-```
-
-### Key Operations (Pure Zig)
-
-| Operation | File | Description |
-|-----------|------|-------------|
-| `matmul` | tensor.zig | SIMD matrix multiplication |
-| `matmulTransB` | tensor.zig | Cache-friendly A @ B^T |
-| `rmsNorm` | tensor.zig | RMS normalization |
-| `softmax` | tensor.zig | Attention softmax |
-| `applyRope` | tensor.zig | Rotary position embedding |
-| `siluInplace` | tensor.zig | SiLU activation |
-
-### Performance Note
-
-The pure Zig implementation is **slower** than GGML because:
-- GGML has hand-optimized assembly kernels
-- GGML uses threading (OpenMP)
-- We dequantize weights on-demand
-
-However, it's fully **educational** - you can read every line of code!
-
-## How It Works
-
-### 1. Model Loading (gguf.zig)
-
-The GGUF format stores:
-- Model metadata (dimensions, vocab size, etc.)
-- Tensor information (shapes, types, offsets)
-- Tensor data (quantized weights)
-
-```zig
-// Parse GGUF and load tensors
-var model = try Model.init(allocator, "model.gguf");
-defer model.deinit();
-```
-
-### 2. Tokenization (tokenizer.zig)
-
-Converts text to token IDs using BPE (Byte-Pair Encoding):
-
-```zig
-var tok = try Tokenizer.initFromGguf(allocator, "model.gguf");
-const tokens = try tok.encode("Hello, world!");
-const text = try tok.decode(tokens);
-```
-
-### 3. Inference (llama.zig)
-
-The transformer forward pass:
-
-```
-Input Tokens
-     │
-     ▼
-┌─────────────────┐
-│  Token Embed   │  Look up embedding vectors
-└─────────────────┘
-     │
-     ▼
-┌─────────────────┐
-│  Transformer   │  × N layers
-│    Layer       │
-│  ┌───────────┐ │
-│  │ RMS Norm  │ │
-│  │ Attention │ │  Multi-head attention with KV cache
-│  │ + Residual│ │
-│  ├───────────┤ │
-│  │ RMS Norm  │ │
-│  │ FFN(SwiGLU)│  Feed-forward with gated activation
-│  │ + Residual│ │
-│  └───────────┘ │
-└─────────────────┘
-     │
-     ▼
-┌─────────────────┐
-│  RMS Norm      │
-│  Output Proj   │  Project to vocabulary size
-└─────────────────┘
-     │
-     ▼
-   Logits (vocab_size)
-```
-
-### 4. Sampling
-
-Convert logits to probability distribution and sample next token:
-
-```zig
-// Top-K sampling
-const next_token = sampleTopK(logits, k: 40);
-```
-
-## Key Concepts
-
-### Grouped Query Attention (GQA)
-
-LLaMA uses GQA where multiple query heads share the same key/value heads:
-- Reduces memory usage for KV cache
-- n_heads = 24 (queries), n_kv_heads = 8 (shared)
-- Each KV head serves 3 query heads (24/8 = 3)
-
-### RoPE (Rotary Position Embedding)
-
-Position information is encoded by rotating the embedding vectors:
-```
-x'[2d] = x[2d] * cos(θ) - x[2d+1] * sin(θ)
-x'[2d+1] = x[2d+1] * cos(θ) + x[2d] * sin(θ)
-```
-
-### KV Cache
-
-Stores computed key/value pairs from previous tokens to avoid recomputation:
-```
-First forward: compute K,V for all tokens, store in cache
-Next forward: only compute K,V for new token, read past from cache
-```
-
-## GGML Dependency
-
-This project uses GGML (the tensor library from llama.cpp) for:
-- Matrix multiplication (optimized SIMD/BLAS)
-- Tensor operations (reshape, transpose, etc.)
-- Quantized tensor support (Q4_K_M, Q8, etc.)
-
-GGML is NOT llama.cpp - it's the low-level tensor library that llama.cpp uses.
+- **llama.cpp Integration**: Leveraging the industry-standard C++ backend for performance and compatibility.
+- **GPU Offloading**: Automatic offloading of model layers to GPU (configurable in `main.zig`).
+- **Interactive Chat**: Built-in chat interface with support for initial prompts.
+- **Optimized Defaults**: Pre-configured for Llama 3.2 with GQA and KV cache optimization.
 
 ## Building from Source
 
 Requirements:
 - Zig 0.15.x
-- C++ compiler (for GGML)
+- C++ compiler (automatically handled by Zig build system for dependencies)
 
 ```bash
 # Fetch dependencies and build
 zig build
 
-# Build specific targets
-zig build MLz        # Main executable
-zig build MLz-native # Experimental native build
+# Build with specific optimization
+zig build -Doptimize=ReleaseSmall
 ```
 
 ## Model Compatibility
 
-Tested with:
-- Llama-3.2-3B-Instruct (Q4_K_M quantization)
-- Other GGUF format models should work
+MLz is tested with **Llama 3.2 3B Instruct** in GGUF format (specifically `Q4_K_M` quantization). Most GGUF models compatible with recent `llama.cpp` versions should work.
 
 Download models from Hugging Face:
 ```bash
-# Example: Download from TheBloke
+# Example: Llama 3.2 3B Instruct
+# Download from unsloth or similar providers
 wget https://huggingface.co/unsloth/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf
 ```
-
-## License
-
-MIT License - See LICENSE file
-
-## Contributing
-
-Contributions welcome! The native implementation (`llama_native.zig`) needs help with:
-- Fixing the attention computation for correct output
-- Properly implementing GQA (Grouped Query Attention)  
-- KV cache layout optimization
