@@ -10,6 +10,14 @@ zig build -Doptimize=ReleaseFast
 
 # Run inference
 .\zig-out\bin\MLz.exe Llama-3.2-3B-Instruct-Q4_K_M.gguf
+
+# Run with custom system prompt and disabled streaming
+.\zig-out\bin\MLz.exe Llama-3.2-3B-Instruct-Q4_K_M.gguf --system "You are a helpful Zig assistant." --stream false
+
+# Load/save chat history (JSON)
+.\zig-out\bin\MLz.exe Llama-3.2-3B-Instruct-Q4_K_M.gguf --load-chat chat.json --save-chat chat.json
+
+# Tip: when --save-chat is set, Ctrl+C exits cleanly and saves.
 ```
 
 ## Hardware Acceleration

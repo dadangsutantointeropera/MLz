@@ -19,6 +19,7 @@ pub const LlamaError = error{
     CapacityExceeded,
     SeqIdOverflow,
     SamplerInitFailed,
+    GrammarInitFailed,
 };
 
 /// Duplicate a slice as a null-terminated string.
@@ -130,6 +131,29 @@ pub const Sampler = struct {
 
     /// Initialize with custom configuration.
     pub fn initWithConfig(config: SamplerConfig) LlamaError!Sampler {
+        return initWithConfigOptionalGrammar(config, null, null, null);
+    }
+
+    /// Initialize with custom configuration and an optional GBNF grammar constraint.
+    ///
+    /// `grammar_str` is a GBNF grammar string. `grammar_root` selects the start rule.
+    /// When grammar is present, the grammar sampler is inserted right before the
+    /// distribution sampler.
+    pub fn initWithConfigAndGrammar(
+        config: SamplerConfig,
+        vocab: *const c.llama_vocab,
+        grammar_str: [:0]const u8,
+        grammar_root: [:0]const u8,
+    ) LlamaError!Sampler {
+        return initWithConfigOptionalGrammar(config, vocab, grammar_str, grammar_root);
+    }
+
+    fn initWithConfigOptionalGrammar(
+        config: SamplerConfig,
+        vocab: ?*const c.llama_vocab,
+        grammar_str: ?[:0]const u8,
+        grammar_root: ?[:0]const u8,
+    ) LlamaError!Sampler {
         const params = c.llama_sampler_chain_default_params();
         const chain = c.llama_sampler_chain_init(params) orelse return LlamaError.SamplerInitFailed;
         errdefer c.llama_sampler_free(chain);
@@ -153,6 +177,17 @@ pub const Sampler = struct {
             c.llama_sampler_chain_add(chain, temp_sampler);
         }
 
+        if (grammar_str) |g| {
+            const v = vocab orelse return LlamaError.VocabUnavailable;
+            const default_root: [:0]const u8 = "root";
+            const root = grammar_root orelse default_root;
+
+            // Guard for older llama.cpp headers.
+            if (!@hasDecl(c, "llama_sampler_init_grammar")) return LlamaError.GrammarInitFailed;
+            const grammar_sampler = c.llama_sampler_init_grammar(v, g.ptr, root.ptr) orelse return LlamaError.GrammarInitFailed;
+            c.llama_sampler_chain_add(chain, grammar_sampler);
+        }
+
         // Distribution sampler (always needed for actual sampling)
         const dist_sampler = c.llama_sampler_init_dist(config.seed) orelse return LlamaError.SamplerInitFailed;
         c.llama_sampler_chain_add(chain, dist_sampler);
@@ -173,6 +208,13 @@ pub const Sampler = struct {
     /// Frees the sampler. Takes self by value.
     pub fn deinit(self: Sampler) void {
         c.llama_sampler_free(self.handle);
+    }
+
+    /// Resets internal sampler state (important for grammar samplers across turns).
+    pub fn reset(self: Sampler) void {
+        if (@hasDecl(c, "llama_sampler_reset")) {
+            c.llama_sampler_reset(self.handle);
+        }
     }
 
     /// Sample from the last token's logits (idx = -1).
