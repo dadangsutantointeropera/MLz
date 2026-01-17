@@ -327,60 +327,63 @@ pub fn build(b: *std.Build) void {
 
     // Metal backend for Apple Silicon GPU acceleration
     if (use_metal) {
-        // Metal backend include path
-        ggml_lib.addIncludePath(llama_cpp_dep.path("ggml/src/ggml-metal"));
+        // Only attempt to link frameworks if we are building FOR macOS
+        if (actual_target.result.os.tag == .macos or actual_target.result.os.tag == .ios) {
+            // Metal backend include path
+            ggml_lib.addIncludePath(llama_cpp_dep.path("ggml/src/ggml-metal"));
 
-        // Objective-C flags for .m files
-        var objc_flags: std.ArrayList([]const u8) = .empty;
-        objc_flags.append(b.allocator, "-D_CRT_SECURE_NO_WARNINGS") catch @panic("OOM");
-        objc_flags.append(b.allocator, "-DGGML_VERSION=\"100\"") catch @panic("OOM");
-        objc_flags.append(b.allocator, "-DGGML_COMMIT=\"unknown\"") catch @panic("OOM");
-        objc_flags.append(b.allocator, "-DGGML_USE_CPU") catch @panic("OOM");
-        objc_flags.append(b.allocator, "-DGGML_USE_METAL") catch @panic("OOM");
-        objc_flags.append(b.allocator, "-fno-objc-arc") catch @panic("OOM");
+            // Objective-C flags for .m files
+            var objc_flags: std.ArrayList([]const u8) = .empty;
+            objc_flags.append(b.allocator, "-D_CRT_SECURE_NO_WARNINGS") catch @panic("OOM");
+            objc_flags.append(b.allocator, "-DGGML_VERSION=\"100\"") catch @panic("OOM");
+            objc_flags.append(b.allocator, "-DGGML_COMMIT=\"unknown\"") catch @panic("OOM");
+            objc_flags.append(b.allocator, "-DGGML_USE_CPU") catch @panic("OOM");
+            objc_flags.append(b.allocator, "-DGGML_USE_METAL") catch @panic("OOM");
+            objc_flags.append(b.allocator, "-fno-objc-arc") catch @panic("OOM");
 
-        // Metal C++ flags
-        var metal_cpp_flags: std.ArrayList([]const u8) = .empty;
-        metal_cpp_flags.append(b.allocator, "-std=c++17") catch @panic("OOM");
-        metal_cpp_flags.append(b.allocator, "-D_CRT_SECURE_NO_WARNINGS") catch @panic("OOM");
-        metal_cpp_flags.append(b.allocator, "-DGGML_VERSION=\"100\"") catch @panic("OOM");
-        metal_cpp_flags.append(b.allocator, "-DGGML_COMMIT=\"unknown\"") catch @panic("OOM");
-        metal_cpp_flags.append(b.allocator, "-DGGML_USE_CPU") catch @panic("OOM");
-        metal_cpp_flags.append(b.allocator, "-DGGML_USE_METAL") catch @panic("OOM");
+            // Metal C++ flags
+            var metal_cpp_flags: std.ArrayList([]const u8) = .empty;
+            metal_cpp_flags.append(b.allocator, "-std=c++17") catch @panic("OOM");
+            metal_cpp_flags.append(b.allocator, "-D_CRT_SECURE_NO_WARNINGS") catch @panic("OOM");
+            metal_cpp_flags.append(b.allocator, "-DGGML_VERSION=\"100\"") catch @panic("OOM");
+            metal_cpp_flags.append(b.allocator, "-DGGML_COMMIT=\"unknown\"") catch @panic("OOM");
+            metal_cpp_flags.append(b.allocator, "-DGGML_USE_CPU") catch @panic("OOM");
+            metal_cpp_flags.append(b.allocator, "-DGGML_USE_METAL") catch @panic("OOM");
 
-        // Objective-C sources
-        ggml_lib.addCSourceFile(.{
-            .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-context.m"),
-            .flags = objc_flags.items,
-        });
-        ggml_lib.addCSourceFile(.{
-            .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-device.m"),
-            .flags = objc_flags.items,
-        });
+            // Objective-C sources
+            ggml_lib.addCSourceFile(.{
+                .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-context.m"),
+                .flags = objc_flags.items,
+            });
+            ggml_lib.addCSourceFile(.{
+                .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-device.m"),
+                .flags = objc_flags.items,
+            });
 
-        // C++ sources
-        ggml_lib.addCSourceFile(.{
-            .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal.cpp"),
-            .flags = metal_cpp_flags.items,
-        });
-        ggml_lib.addCSourceFile(.{
-            .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-common.cpp"),
-            .flags = metal_cpp_flags.items,
-        });
-        ggml_lib.addCSourceFile(.{
-            .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-device.cpp"),
-            .flags = metal_cpp_flags.items,
-        });
-        ggml_lib.addCSourceFile(.{
-            .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-ops.cpp"),
-            .flags = metal_cpp_flags.items,
-        });
+            // C++ sources
+            ggml_lib.addCSourceFile(.{
+                .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal.cpp"),
+                .flags = metal_cpp_flags.items,
+            });
+            ggml_lib.addCSourceFile(.{
+                .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-common.cpp"),
+                .flags = metal_cpp_flags.items,
+            });
+            ggml_lib.addCSourceFile(.{
+                .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-device.cpp"),
+                .flags = metal_cpp_flags.items,
+            });
+            ggml_lib.addCSourceFile(.{
+                .file = llama_cpp_dep.path("ggml/src/ggml-metal/ggml-metal-ops.cpp"),
+                .flags = metal_cpp_flags.items,
+            });
 
-        // Link Apple frameworks required for Metal
-        ggml_lib.linkFramework("Metal");
-        ggml_lib.linkFramework("Foundation");
-        ggml_lib.linkFramework("MetalPerformanceShaders");
-        ggml_lib.linkFramework("MetalPerformanceShadersGraph");
+            // Link Apple frameworks required for Metal
+            ggml_lib.linkFramework("Metal");
+            ggml_lib.linkFramework("Foundation");
+            ggml_lib.linkFramework("MetalPerformanceShaders");
+            ggml_lib.linkFramework("MetalPerformanceShadersGraph");
+        }
     }
 
     ggml_lib.addIncludePath(llama_cpp_dep.path("ggml/include"));
@@ -430,11 +433,11 @@ pub fn build(b: *std.Build) void {
     const llama_src_abs = llama_cpp_dep.path("src").getPath(b);
     var llama_dir = if (std.fs.path.isAbsolute(llama_src_abs))
         std.fs.openDirAbsolute(llama_src_abs, .{ .iterate = true }) catch |err| {
-             std.debug.panic("failed to open llama.cpp src dir (absolute): {s}: {any}", .{ llama_src_abs, err });
+            std.debug.panic("failed to open llama.cpp src dir (absolute): {s}: {any}", .{ llama_src_abs, err });
         }
     else
         std.fs.cwd().openDir(llama_src_abs, .{ .iterate = true }) catch |err| {
-             std.debug.panic("failed to open llama.cpp src dir (relative): {s}: {any}", .{ llama_src_abs, err });
+            std.debug.panic("failed to open llama.cpp src dir (relative): {s}: {any}", .{ llama_src_abs, err });
         };
     defer llama_dir.close();
 

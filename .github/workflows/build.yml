@@ -49,8 +49,8 @@ jobs:
         if: matrix.test
         run: zig build test -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
         
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: MLz-${{ matrix.target }}
-          path: zig-out/bin/*
+          files: zig-out/bin/*
+          fail_on_unmatched_files: true
