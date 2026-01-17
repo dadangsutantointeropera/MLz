@@ -56,7 +56,7 @@ fn handler(ctrl_type: std.os.windows.DWORD) callconv(.winapi) std.os.windows.BOO
     }
 }
 
-fn posixHandler(sig: c_int) callconv(.C) void {
+fn posixHandler(sig: c_int) callconv(.c) void {
     _ = sig;
     should_exit_flag.store(true, .seq_cst);
 }

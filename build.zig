@@ -99,6 +99,11 @@ pub fn build(b: *std.Build) void {
     c_flags.append(b.allocator, "-DGGML_USE_CPU") catch @panic("OOM");
     cpp_flags.append(b.allocator, "-DGGML_USE_CPU") catch @panic("OOM");
 
+    if (actual_target.result.os.tag == .linux) {
+        c_flags.append(b.allocator, "-D_GNU_SOURCE") catch @panic("OOM");
+        cpp_flags.append(b.allocator, "-D_GNU_SOURCE") catch @panic("OOM");
+    }
+
     if (use_vulkan) {
         c_flags.append(b.allocator, "-DGGML_USE_VULKAN") catch @panic("OOM");
         cpp_flags.append(b.allocator, "-DGGML_USE_VULKAN") catch @panic("OOM");
