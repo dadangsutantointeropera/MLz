@@ -428,9 +428,14 @@ pub fn build(b: *std.Build) void {
     // Add all .cpp files from llama.cpp/src recursively (includes model registry).
     // This mirrors the upstream CMakeLists (simpler than keeping a huge list in sync).
     const llama_src_abs = llama_cpp_dep.path("src").getPath(b);
-    var llama_dir = std.fs.openDirAbsolute(llama_src_abs, .{ .iterate = true }) catch |err| {
-        std.debug.panic("failed to open llama.cpp src dir: {s}: {any}", .{ llama_src_abs, err });
-    };
+    var llama_dir = if (std.fs.path.isAbsolute(llama_src_abs))
+        std.fs.openDirAbsolute(llama_src_abs, .{ .iterate = true }) catch |err| {
+             std.debug.panic("failed to open llama.cpp src dir (absolute): {s}: {any}", .{ llama_src_abs, err });
+        }
+    else
+        std.fs.cwd().openDir(llama_src_abs, .{ .iterate = true }) catch |err| {
+             std.debug.panic("failed to open llama.cpp src dir (relative): {s}: {any}", .{ llama_src_abs, err });
+        };
     defer llama_dir.close();
 
     var walker = llama_dir.walk(b.allocator) catch @panic("oom walking llama.cpp src");
