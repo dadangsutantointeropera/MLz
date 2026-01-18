@@ -16,7 +16,8 @@ pub fn build(b: *std.Build) void {
     var actual_target = target;
     if (use_cuda and target.result.os.tag == .windows) {
         actual_target.query.abi = .msvc;
-        actual_target.query.cpu_model = .{ .explicit = &std.Target.x86.cpu.x86_64_v3 };
+        // Don't enforce x86_64_v3 globally as it might cause illegal instruction errors on older CPUs
+        // actual_target.query.cpu_model = .{ .explicit = &std.Target.x86.cpu.x86_64_v3 };
     }
     const optimize = b.standardOptimizeOption(.{});
 
